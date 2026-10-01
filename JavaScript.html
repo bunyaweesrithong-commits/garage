@@ -19,7 +19,7 @@
   const TOKEN_KEY = 'garageToken';
   function loadToken() { try { return localStorage.getItem(TOKEN_KEY) || ''; } catch (e) { return ''; } }
   function saveToken(t) { try { t ? localStorage.setItem(TOKEN_KEY, t) : localStorage.removeItem(TOKEN_KEY); } catch (e) { /* ignore */ } }
-  const state = { info: {}, vehicle: null, repairs: [], searchSeq: 0, token: loadToken() };
+  const state = { info: {}, vehicle: null, repairs: [], searchSeq: 0, token: loadToken(), jobNoInfo: {} };
   const $ = (id) => document.getElementById(id);
 
   function esc(s) {
@@ -152,14 +152,40 @@
     const form = $('vehicleModal').querySelector('form');
     fillForm(form, v || { plate: /^[฀-๿0-9\s]+$/.test($('q').value.trim()) && !state.vehicle ? $('q').value.trim() : '' });
     $('vehicleModalTitle').textContent = v ? 'แก้ไขข้อมูลรถ / ลูกค้า' : 'เพิ่มรถ / ลูกค้าใหม่';
+    // เพิ่มรถใหม่: ให้บันทึกงานซ่อมครั้งแรกพร้อมกันได้ / แก้ไขรถเดิม: ซ่อนส่วนนี้
+    $('firstRepair').classList.toggle('hidden', !!v);
+    $('withRepair').checked = !v;
+    if (!v) {
+      form.elements.r_receivedDate.value = todayIso();
+      previewJobNo('first');
+    }
+    toggleFirstRepair();
     openModal('vehicleModal');
+  }
+
+  function toggleFirstRepair() {
+    const on = $('withRepair').checked && !$('firstRepair').classList.contains('hidden');
+    $('firstRepairFields').classList.toggle('hidden', !on);
+    $('vehicleModal').querySelector('[name=r_receivedDate]').required = on;
   }
 
   async function submitVehicle(e) {
     e.preventDefault();
-    const data = formData(e.target);
-    data.chassisNo = data.chassisNo.toUpperCase();
-    const id = await busy(api.saveVehicle(data)).catch(() => null);
+    const vehicle = {}, repair = {};
+    Object.entries(formData(e.target)).forEach(([k, val]) => {
+      if (k.indexOf('r_') === 0) repair[k.slice(2)] = val; else vehicle[k] = val;
+    });
+    vehicle.chassisNo = vehicle.chassisNo.toUpperCase();
+
+    if (!vehicle.vehicleId && $('withRepair').checked) {
+      const res = await busy(api.saveVehicleWithRepair(vehicle, repair)).catch(() => null);
+      if (!res) return;
+      closeModal('vehicleModal');
+      toast(`บันทึกรถและงานซ่อม เลขที่ ${res.jobNo} แล้ว`);
+      openVehicle(res.vehicleId);
+      return;
+    }
+    const id = await busy(api.saveVehicle(vehicle)).catch(() => null);
     if (!id) return;
     closeModal('vehicleModal');
     toast('บันทึกข้อมูลรถแล้ว');
@@ -179,26 +205,55 @@
   function openRepairForm(repairId) {
     const form = $('repairModal').querySelector('form');
     const r = repairId ? state.repairs.find(x => x.repairId === repairId) : null;
+    state.jobNoInfo.repair = null;
     if (r) {
       fillForm(form, r);
       $('jobNoPreview').textContent = r.jobNo;
       $('jobNoHint').textContent = 'เลขที่ออกแล้ว จะไม่เปลี่ยนแม้แก้วันที่';
+      $('runNoField').classList.add('hidden');
     } else {
       const last = state.repairs[0];
       fillForm(form, { receivedDate: todayIso(), technician: last ? last.technician : '' });
-      $('jobNoHint').textContent = 'ออกเลขอัตโนมัติตามปีของวันที่รับรถ (เลขจริงจะยืนยันตอนบันทึก)';
+      $('jobNoHint').textContent = 'นับใหม่ทุกเดือนตามวันที่รับรถ แก้ลำดับเองได้ถ้าต้องให้ตรงกับสมุดเดิม';
+      $('runNoField').classList.remove('hidden');
       previewJobNo();
     }
     $('repairModalTitle').textContent = r ? `แก้ไขงานซ่อม ${r.jobNo}` : `บันทึกการซ่อม — ${state.vehicle.plate}`;
     openModal('repairModal');
   }
 
-  async function previewJobNo() {
-    const form = $('repairModal').querySelector('form');
-    if (form.elements.repairId.value) return;
-    $('jobNoPreview').textContent = '…';
-    const no = await api.getNextJobNo(form.elements.receivedDate.value || todayIso()).catch(() => '-');
-    if (!form.elements.repairId.value) $('jobNoPreview').textContent = no;
+  function setCompletedToday() {
+    $('repairModal').querySelector('[name=completedDate]').value = todayIso();
+  }
+
+  // ช่องเลขที่/ปี มี 2 ที่: ฟอร์มบันทึกการซ่อม และส่วนงานซ่อมครั้งแรกในฟอร์มเพิ่มรถ
+  const JOBNO_BOXES = {
+    repair: { modal: 'repairModal', preview: 'jobNoPreview', run: 'runNo', date: 'receivedDate' },
+    first: { modal: 'vehicleModal', preview: 'frJobNoPreview', run: 'r_runNo', date: 'r_receivedDate' },
+  };
+
+  // ขอเลขถัดไปของเดือนตามวันที่รับรถ แล้วใส่ในช่องลำดับ
+  async function previewJobNo(which) {
+    which = which || 'repair';
+    const b = JOBNO_BOXES[which];
+    const form = $(b.modal).querySelector('form');
+    const editing = () => which === 'repair' && form.elements.repairId.value;
+    if (editing()) return;
+    $(b.preview).textContent = '…';
+    const info = await api.getNextJobNo(form.elements[b.date].value || todayIso()).catch(() => null);
+    if (editing()) return;
+    state.jobNoInfo[which] = info;
+    form.elements[b.run].value = info ? info.runNo : '';
+    renderJobNo(which);
+  }
+
+  // แสดงเลขที่ตามลำดับที่กรอก เช่น 5 → 5/69
+  function renderJobNo(which) {
+    which = which || 'repair';
+    const b = JOBNO_BOXES[which];
+    const info = state.jobNoInfo[which];
+    const n = parseInt($(b.modal).querySelector(`[name=${b.run}]`).value, 10);
+    $(b.preview).textContent = info && n > 0 ? info.template.replace(/\{n\}/g, String(n).padStart(info.digits, '0')) : '-';
   }
 
   async function submitRepair(e) {

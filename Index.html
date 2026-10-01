@@ -60,6 +60,17 @@
     .form-grid label { font-size: 13px; color: var(--muted); display: block; margin-bottom: 3px; }
     .req::after { content: ' *'; color: var(--danger); }
     .modal .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+    .optional { color: var(--muted); font-size: 12px; }
+    .date-row { display: flex; gap: 6px; }
+    .date-row input { min-width: 0; }
+    .date-row button { flex: none; }
+    .jobno-row { display: flex; gap: 16px; align-items: flex-end; justify-content: space-between; flex-wrap: wrap; margin-bottom: 14px; padding: 10px 12px; background: var(--shade); border-radius: 8px; }
+    .runno-field { width: 190px; }
+    .runno-field label { font-size: 13px; color: var(--muted); display: block; margin-bottom: 3px; }
+    .runno-field input { font-size: 18px; font-weight: 700; }
+    .first-repair { margin-top: 18px; border-top: 1px solid var(--line); padding-top: 14px; }
+    .first-repair .check { display: flex; gap: 8px; align-items: center; font-weight: 600; color: var(--navy); cursor: pointer; margin-bottom: 12px; }
+    .first-repair .check input { width: 18px; height: 18px; }
     .jobno { font-size: 22px; font-weight: 700; color: var(--navy-2); }
     /* toast / loading */
     #toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #222; color: #fff; padding: 10px 18px; border-radius: 8px; z-index: 50; max-width: 90vw; }
@@ -176,6 +187,32 @@
         <div><label>เลขตัวถัง (คัสซี)</label><input name="chassisNo" style="text-transform:uppercase"></div>
         <div class="full"><label>หมายเหตุ</label><input name="note"></div>
       </div>
+
+      <!-- งานซ่อมครั้งแรก (แสดงเฉพาะตอนเพิ่มรถใหม่) -->
+      <div id="firstRepair" class="first-repair">
+        <label class="check"><input type="checkbox" id="withRepair" onchange="toggleFirstRepair()"> บันทึกการซ่อมครั้งแรกด้วย (เลขที่/ปี, วันที่รับรถ, รายการซ่อม)</label>
+        <div id="firstRepairFields">
+          <div class="jobno-row">
+            <div>
+              <span class="muted">เลขที่/ปี: </span>
+              <span class="jobno" id="frJobNoPreview">-</span>
+              <div class="hint">นับใหม่ทุกเดือนตามวันที่รับรถ แก้ลำดับเองได้</div>
+            </div>
+            <div class="runno-field">
+              <label>ลำดับรถคันที่ (ในเดือนนี้)</label>
+              <input name="r_runNo" type="number" min="1" step="1" inputmode="numeric" oninput="renderJobNo('first')">
+            </div>
+          </div>
+          <div class="form-grid">
+            <div><label class="req">วันที่รับรถ</label><input name="r_receivedDate" type="date" onchange="previewJobNo('first')"></div>
+            <div><label>วันที่ซ่อมเสร็จ <span class="optional">(เว้นว่างได้)</span></label><input name="r_completedDate" type="date"></div>
+            <div><label>เลขไมล์ (กม.)</label><input name="r_mileage" inputmode="numeric" placeholder="เช่น 85200"></div>
+            <div class="full"><label>รายการซ่อม (1 บรรทัดต่อ 1 รายการ)</label><textarea name="r_details"></textarea></div>
+            <div><label>ช่างผู้รับผิดชอบ</label><input name="r_technician"></div>
+            <div><label>ค่าใช้จ่าย (บาท)</label><input name="r_cost" inputmode="decimal"></div>
+          </div>
+        </div>
+      </div>
       <div class="actions">
         <button type="button" onclick="closeModal('vehicleModal')">ยกเลิก</button>
         <button type="submit" class="primary">บันทึก</button>
@@ -188,14 +225,27 @@
     <form class="box" onsubmit="submitRepair(event)">
       <h3 id="repairModalTitle">บันทึกการซ่อม</h3>
       <input type="hidden" name="repairId">
-      <div style="margin-bottom:12px">
-        <span class="muted">เลขที่/ปี (รถคันที่ ในปีนั้น): </span>
-        <span class="jobno" id="jobNoPreview">-</span>
-        <div class="hint" id="jobNoHint">ออกเลขอัตโนมัติตามปีของวันที่รับรถ</div>
+      <div class="jobno-row">
+        <div>
+          <span class="muted">เลขที่/ปี: </span>
+          <span class="jobno" id="jobNoPreview">-</span>
+          <div class="hint" id="jobNoHint"></div>
+        </div>
+        <div id="runNoField" class="runno-field">
+          <label>ลำดับรถคันที่ (ในเดือนนี้)</label>
+          <input name="runNo" type="number" min="1" step="1" inputmode="numeric" oninput="renderJobNo()">
+        </div>
       </div>
       <div class="form-grid">
         <div><label class="req">วันที่รับรถ</label><input name="receivedDate" type="date" required onchange="previewJobNo()"></div>
-        <div><label>วันที่ซ่อมเสร็จ</label><input name="completedDate" type="date"></div>
+        <div>
+          <label>วันที่ซ่อมเสร็จ <span class="optional">(เว้นว่างได้ ถ้ายังไม่เสร็จ)</span></label>
+          <div class="date-row">
+            <input name="completedDate" type="date">
+            <button type="button" class="small" onclick="setCompletedToday()">วันนี้</button>
+          </div>
+          <div class="hint">รถตกค้าง / รออะไหล่: เว้นว่างไว้ก่อน มาแก้ไขใส่วันที่ทีหลังได้</div>
+        </div>
         <div><label>เลขไมล์ (กม.)</label><input name="mileage" inputmode="numeric" placeholder="เช่น 85200"></div>
         <div class="full"><label>รายการซ่อม (1 บรรทัดต่อ 1 รายการ)</label><textarea name="details" placeholder="เปลี่ยนน้ำมันเครื่อง&#10;เปลี่ยนผ้าเบรกหน้า"></textarea></div>
         <div><label>ช่างผู้รับผิดชอบ</label><input name="technician"></div>

@@ -69,7 +69,7 @@ function searchVehicles_(query) {
   });
 
   const fields = ['plate', 'province', 'brand', 'model', 'color', 'chassisNo', 'customerName', 'phone', 'otherContact'];
-  const isJobNo = /^\d+\/\d{4}$/.test(q);
+  const isJobNo = /^\d+\/\d+/.test(q);
   const matched = vehicles.filter(v => {
     if (!q) return true;
     if (isJobNo) {
@@ -140,6 +140,23 @@ function saveVehicle_(input) {
 }
 
 /** ลบรถ พร้อมประวัติการซ่อมทั้งหมดของรถคันนั้น */
+/**
+ * เพิ่มรถใหม่พร้อมงานซ่อมครั้งแรกในครั้งเดียว (ฟอร์ม "เพิ่มรถ / ลูกค้าใหม่")
+ * ถ้าบันทึกงานซ่อมไม่ผ่าน (เช่น เลขที่ซ้ำ) จะลบรถที่เพิ่งเพิ่มออก เพื่อไม่ให้ข้อมูลค้างครึ่งเดียว
+ */
+function saveVehicleWithRepair_(vehicleInput, repairInput) {
+  if (vehicleInput && vehicleInput.vehicleId) throw new Error('ใช้สำหรับเพิ่มรถใหม่เท่านั้น');
+  if (!repairInput || !repairInput.receivedDate) throw new Error('กรุณากรอกวันที่รับรถ');
+  const vehicleId = saveVehicle_(vehicleInput);
+  try {
+    const repair = saveRepair_(Object.assign({}, repairInput, { vehicleId: vehicleId, repairId: '' }));
+    return { vehicleId: vehicleId, jobNo: repair.jobNo };
+  } catch (err) {
+    deleteVehicle_(vehicleId);
+    throw err;
+  }
+}
+
 function deleteVehicle_(vehicleId) {
   return withLock_(() => {
     const v = findById_(SHEETS.VEHICLES, VEHICLE_COLS, 'vehicleId', vehicleId);
@@ -152,16 +169,21 @@ function deleteVehicle_(vehicleId) {
 }
 
 /** เลขที่/ปี ถัดไปของปีที่รับรถ (ใช้แสดงตัวอย่างในฟอร์ม) */
+/** ลำดับถัดไปของงวดของวันที่รับรถ: { runNo, jobNo, template, digits } (template ใช้แสดงตัวอย่างในฟอร์ม) */
 function getNextJobNo_(receivedDateIso) {
-  const d = parseDate_(receivedDateIso) || new Date();
-  const yearBE = toYearBE_(d);
-  const runNo = nextRunNo_(readTable_(SHEETS.REPAIRS, REPAIR_COLS), yearBE);
-  return formatJobNo_(runNo, yearBE);
+  const s = getSettings_();
+  const period = periodOf_(parseDate_(receivedDateIso) || new Date());
+  const runNo = nextRunNo_(readTable_(SHEETS.REPAIRS, REPAIR_COLS), period, s);
+  return {
+    runNo: runNo, jobNo: formatJobNo_(runNo, period, s),
+    template: jobNoTemplate_(period, s), digits: Math.max(1, Number(s.jobNoDigits) || 1),
+  };
 }
 
 /**
  * บันทึก (เพิ่ม/แก้ไข) ประวัติการซ่อม
- * งานใหม่จะได้เลขที่/ปี อัตโนมัติ = ลำดับรถที่เข้าซ่อมในปี พ.ศ. ของวันที่รับรถ
+ * งานใหม่ได้เลขที่อัตโนมัติ = ลำดับรถที่เข้าซ่อมในเดือน (หรือปี ตาม jobNoReset) ของวันที่รับรถ
+ * ส่ง runNo มาเองได้ (เช่น ให้ตรงกับสมุดเดิม) แต่ห้ามซ้ำกับงานอื่นในงวดเดียวกัน
  */
 function saveRepair_(input) {
   const r = cleanInput_(input, REPAIR_COLS);
@@ -182,14 +204,23 @@ function saveRepair_(input) {
       const old = all.find(x => x.repairId === r.repairId);
       if (!old) throw new Error('ไม่พบงานซ่อมที่ต้องการแก้ไข');
       // เลขที่/ปี ออกแล้วไม่เปลี่ยน เพื่อให้ตรงกับใบรับรองที่พิมพ์ไปแล้ว
-      ['jobNo', 'runNo', 'yearBE', 'certDocUrl', 'certPdfUrl', 'createdAt'].forEach(k => { r[k] = old[k]; });
+      ['jobNo', 'runNo', 'yearBE', 'periodKey', 'certDocUrl', 'certPdfUrl', 'createdAt'].forEach(k => { r[k] = old[k]; });
       r.updatedAt = now;
       writeRow_(SHEETS.REPAIRS, REPAIR_COLS, r, old._row);
     } else {
       r.repairId = 'R' + Utilities.getUuid().replace(/-/g, '').slice(0, 10).toUpperCase();
+      const s = getSettings_();
+      r.periodKey = periodOf_(r.receivedDate);
       r.yearBE = toYearBE_(r.receivedDate);
-      r.runNo = nextRunNo_(all, r.yearBE);
-      r.jobNo = formatJobNo_(r.runNo, r.yearBE);
+      if (r.runNo === '' || r.runNo == null) {
+        r.runNo = nextRunNo_(all, r.periodKey, s);
+      } else {
+        r.runNo = Number(r.runNo);
+        if (!Number.isInteger(r.runNo) || r.runNo < 1) throw new Error('ลำดับเลขที่ต้องเป็นตัวเลขจำนวนเต็มตั้งแต่ 1 ขึ้นไป');
+        const used = all.find(x => samePeriod_(repairPeriod_(x), r.periodKey, s) && Number(x.runNo) === r.runNo);
+        if (used) throw new Error(`เลขที่ ${formatJobNo_(r.runNo, r.periodKey, s)} ถูกใช้แล้ว (${used.jobNo}) กรุณาใช้เลขอื่น`);
+      }
+      r.jobNo = formatJobNo_(r.runNo, r.periodKey, s);
       r.certDocUrl = '';
       r.certPdfUrl = '';
       r.createdAt = now;

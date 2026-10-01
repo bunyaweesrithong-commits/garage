@@ -78,6 +78,7 @@ function getAppInfo(token) { requireAuth_(token); return getAppInfo_(); }
 function searchVehicles(token, query) { requireAuth_(token); return searchVehicles_(query); }
 function getVehicle(token, vehicleId) { requireAuth_(token); return getVehicle_(vehicleId); }
 function saveVehicle(token, input) { requireAuth_(token); return saveVehicle_(input); }
+function saveVehicleWithRepair(token, vehicle, repair) { requireAuth_(token); return saveVehicleWithRepair_(vehicle, repair); }
 function deleteVehicle(token, vehicleId) { requireAuth_(token); return deleteVehicle_(vehicleId); }
 function getNextJobNo(token, receivedDateIso) { requireAuth_(token); return getNextJobNo_(receivedDateIso); }
 function saveRepair(token, input) { requireAuth_(token); return saveRepair_(input); }

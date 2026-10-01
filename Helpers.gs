@@ -169,17 +169,41 @@ function toYearBE_(d) {
   return Number(Utilities.formatDate(d, tz_(), 'yyyy')) + 543;
 }
 
-function nextRunNo_(repairs, yearBE) {
+/** งวดของวันที่ เป็น 'ปีพ.ศ.-เดือน' เช่น '2569-10' */
+function periodOf_(d) {
+  return toYearBE_(d) + '-' + Utilities.formatDate(d, tz_(), 'MM');
+}
+
+/** งวดของงานซ่อมที่บันทึกแล้ว (แถวเก่าที่ยังไม่มี periodKey ใช้วันที่รับรถแทน) */
+function repairPeriod_(r) {
+  if (r.periodKey) return String(r.periodKey);
+  return r.receivedDate instanceof Date ? periodOf_(r.receivedDate) : '';
+}
+
+/** อยู่ในรอบนับเลขเดียวกันหรือไม่ (jobNoReset: month = เดือนเดียวกัน, year = ปีเดียวกัน) */
+function samePeriod_(a, b, s) {
+  if (!a || !b) return false;
+  return String(s.jobNoReset).trim().toLowerCase() === 'year' ? a.slice(0, 4) === b.slice(0, 4) : a === b;
+}
+
+function nextRunNo_(repairs, period, s) {
   let max = 0;
   repairs.forEach(r => {
-    if (Number(r.yearBE) === Number(yearBE)) max = Math.max(max, Number(r.runNo) || 0);
+    if (samePeriod_(repairPeriod_(r), period, s)) max = Math.max(max, Number(r.runNo) || 0);
   });
   return max + 1;
 }
 
-function formatJobNo_(runNo, yearBE) {
-  const digits = Math.max(1, Number(getSettings_().jobNoDigits) || 1);
-  return String(runNo).padStart(digits, '0') + '/' + yearBE;
+/** รูปแบบเลขที่ของงวด โดยเหลือ {n} ไว้ เช่น '{n}/69' */
+function jobNoTemplate_(period, s) {
+  const yyyy = period.slice(0, 4), mm = period.slice(5, 7);
+  return String(s.jobNoFormat || '{n}/{yy}')
+    .replace(/\{yyyy\}/g, yyyy).replace(/\{yy\}/g, yyyy.slice(2)).replace(/\{mm\}/g, mm);
+}
+
+function formatJobNo_(runNo, period, s) {
+  const digits = Math.max(1, Number(s.jobNoDigits) || 1);
+  return jobNoTemplate_(period, s).replace(/\{n\}/g, String(runNo).padStart(digits, '0'));
 }
 
 /** '2026-09-29' → '29 กันยายน 2569' */
