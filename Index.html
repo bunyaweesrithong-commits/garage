@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --navy: #1f3a60; --navy-2: #2c5282; --bg: #f4f6f9; --card: #fff; --line: #dde2ea;
+      --text: #1d2530; --muted: #667085; --danger: #c0392b; --ok: #1e8e3e; --shade: #eef2f7;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: 'Sarabun', sans-serif; background: var(--bg); color: var(--text); font-size: 15px; }
+    header { background: var(--navy); color: #fff; padding: 14px 20px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    header h1 { margin: 0; font-size: 20px; font-weight: 700; flex: 1; min-width: 200px; }
+    header small { opacity: .75; font-weight: 400; display: block; font-size: 13px; }
+    main { max-width: 1180px; margin: 0 auto; padding: 16px; }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+    .search { display: flex; gap: 8px; }
+    .search input { flex: 1; font-size: 17px; padding: 11px 14px; }
+    input, textarea, select { font-family: inherit; font-size: 15px; padding: 8px 10px; border: 1px solid #c6cdd8; border-radius: 7px; width: 100%; background: #fff; color: var(--text); }
+    input:focus, textarea:focus { outline: 2px solid #9ec1f0; border-color: var(--navy-2); }
+    textarea { min-height: 110px; resize: vertical; }
+    button { font-family: inherit; font-size: 14px; border: 1px solid #c6cdd8; background: #fff; color: var(--text); padding: 8px 14px; border-radius: 7px; cursor: pointer; white-space: nowrap; }
+    button:hover { background: var(--shade); }
+    button.primary { background: var(--navy-2); color: #fff; border-color: var(--navy-2); }
+    button.primary:hover { background: var(--navy); }
+    button.danger { color: var(--danger); border-color: #e6b8b2; }
+    button.small { padding: 4px 9px; font-size: 13px; }
+    header button { background: #fff; color: var(--navy); border: 0; font-weight: 600; }
+    .muted { color: var(--muted); }
+    .hint { font-size: 13px; color: var(--muted); margin-top: 6px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+    th { background: var(--shade); font-weight: 600; font-size: 14px; white-space: nowrap; }
+    tbody tr.clickable { cursor: pointer; }
+    tbody tr.clickable:hover { background: #f7f9fc; }
+    .plate { display: inline-block; border: 2px solid #333; border-radius: 5px; padding: 1px 8px; font-weight: 700; background: #fff; line-height: 1.3; }
+    .plate small { display: block; font-size: 11px; font-weight: 400; text-align: center; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 99px; background: var(--shade); font-size: 13px; }
+    .badge.ok { background: #e6f4ea; color: var(--ok); }
+    .badge.wait { background: #fff4e5; color: #b26a00; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px 20px; }
+    .field label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 3px; }
+    .field .val { font-weight: 600; word-break: break-word; }
+    .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .toolbar .spacer { flex: 1; }
+    .toolbar a { font-size: 13px; color: var(--navy-2); }
+    .details { white-space: pre-line; max-width: 380px; }
+    .table-wrap { overflow-x: auto; }
+    .hidden { display: none !important; }
+    h2 { font-size: 18px; margin: 0 0 12px; color: var(--navy); }
+    /* modal */
+    .modal { position: fixed; inset: 0; background: rgba(15, 23, 42, .45); display: flex; align-items: flex-start; justify-content: center; padding: 30px 12px; overflow-y: auto; z-index: 20; }
+    .modal .box { background: #fff; border-radius: 12px; width: 100%; max-width: 720px; padding: 20px; }
+    .modal h3 { margin: 0 0 14px; color: var(--navy); }
+    .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px 14px; }
+    .form-grid .full { grid-column: 1 / -1; }
+    .form-grid label { font-size: 13px; color: var(--muted); display: block; margin-bottom: 3px; }
+    .req::after { content: ' *'; color: var(--danger); }
+    .modal .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+    .jobno { font-size: 22px; font-weight: 700; color: var(--navy-2); }
+    /* toast / loading */
+    #toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #222; color: #fff; padding: 10px 18px; border-radius: 8px; z-index: 50; max-width: 90vw; }
+    #toast.error { background: var(--danger); }
+    #loading { position: fixed; top: 0; left: 0; right: 0; height: 3px; background: linear-gradient(90deg, transparent, #7fb3ff, transparent); background-size: 50% 100%; animation: load 1s linear infinite; z-index: 60; }
+    @keyframes load { from { background-position: -50% 0; } to { background-position: 150% 0; } }
+    header button.logout { background: transparent; color: #fff; border: 1px solid rgba(255,255,255,.5); font-weight: 400; }
+    #loginView { position: fixed; inset: 0; background: var(--navy); display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 40; }
+    .login-box { background: #fff; border-radius: 14px; padding: 28px 24px; width: 100%; max-width: 360px; text-align: center; }
+    .login-box h2 { margin: 6px 0 2px; }
+    .login-box input { margin-top: 18px; font-size: 22px; text-align: center; letter-spacing: 6px; }
+    .login-box input::placeholder { letter-spacing: normal; font-size: 16px; }
+    .login-box button { width: 100%; margin-top: 12px; padding: 11px; font-size: 16px; }
+    .login-icon { font-size: 34px; }
+    .login-error { color: var(--danger); min-height: 20px; margin-top: 8px; font-size: 14px; }
+    @media (max-width: 640px) {
+      .hide-sm { display: none; }
+      th, td { padding: 8px 6px; }
+    }
+  </style>
+</head>
+<body>
+  <div id="loading" class="hidden"></div>
+
+  <!-- หน้าใส่รหัสผ่าน -->
+  <div id="loginView" class="hidden">
+    <form class="login-box" onsubmit="submitLogin(event)">
+      <div class="login-icon">🔒</div>
+      <h2>ระบบประวัติการซ่อมรถ</h2>
+      <div class="muted" id="loginShop"></div>
+      <input id="pin" type="password" inputmode="numeric" autocomplete="current-password" placeholder="ใส่รหัสผ่าน" required>
+      <div id="loginError" class="login-error"></div>
+      <button type="submit" class="primary" id="loginBtn">เข้าสู่ระบบ</button>
+    </form>
+  </div>
+  <header>
+    <h1>ระบบประวัติการซ่อมรถ <small id="shopName"></small></h1>
+    <button onclick="openVehicleForm()">+ เพิ่มรถ / ลูกค้าใหม่</button>
+    <button class="logout" onclick="logout()" title="ออกจากระบบ">ออกจากระบบ</button>
+  </header>
+
+  <main>
+    <!-- ค้นหา -->
+    <section id="searchView">
+      <div class="card">
+        <div class="search">
+          <input id="q" type="search" placeholder="ค้นหา: ทะเบียน, ชื่อลูกค้า, เบอร์โทร, เลขตัวถัง, รุ่นรถ หรือ เลขที่งาน เช่น 12/2569" autocomplete="off">
+          <button class="primary" onclick="doSearch()">ค้นหา</button>
+        </div>
+        <div class="hint" id="resultInfo"></div>
+      </div>
+      <div class="card table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>ทะเบียน</th><th>ยี่ห้อ / รุ่น</th><th>ลูกค้า</th><th class="hide-sm">เบอร์โทร</th>
+              <th class="hide-sm">เลขตัวถัง</th><th>ซ่อม (ครั้ง)</th><th class="hide-sm">ซ่อมล่าสุด</th>
+            </tr>
+          </thead>
+          <tbody id="results"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- รายละเอียดรถ -->
+    <section id="vehicleView" class="hidden">
+      <div class="toolbar" style="margin-bottom:12px">
+        <button onclick="backToSearch()">← กลับไปค้นหา</button>
+      </div>
+      <div class="card">
+        <div class="toolbar" style="margin-bottom:14px">
+          <h2 style="margin:0" id="vTitle"></h2>
+          <span class="spacer"></span>
+          <button onclick="openVehicleForm(state.vehicle)">แก้ไขข้อมูลรถ/ลูกค้า</button>
+          <button class="danger" onclick="removeVehicle()">ลบรถ</button>
+        </div>
+        <div class="grid" id="vInfo"></div>
+      </div>
+      <div class="card">
+        <div class="toolbar" style="margin-bottom:10px">
+          <h2 style="margin:0">ประวัติการซ่อม</h2>
+          <span class="spacer"></span>
+          <button class="primary" onclick="openRepairForm()">+ บันทึกการซ่อม</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>เลขที่/ปี</th><th>วันที่รับรถ</th><th>วันที่เสร็จ</th><th>เลขไมล์</th>
+                <th>รายการซ่อม</th><th class="hide-sm">ช่าง</th><th>ใบรับรอง / จัดการ</th>
+              </tr>
+            </thead>
+            <tbody id="repairs"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ฟอร์มรถ -->
+  <div id="vehicleModal" class="modal hidden">
+    <form class="box" onsubmit="submitVehicle(event)">
+      <h3 id="vehicleModalTitle">เพิ่มรถ / ลูกค้าใหม่</h3>
+      <input type="hidden" name="vehicleId">
+      <div class="form-grid">
+        <div><label class="req">ชื่อลูกค้า</label><input name="customerName" required></div>
+        <div><label>เบอร์โทร</label><input name="phone" type="tel" placeholder="08x-xxx-xxxx"></div>
+        <div class="full"><label>ช่องทางติดต่ออื่น</label><input name="otherContact" placeholder="LINE / Facebook / อีเมล / ที่อยู่"></div>
+        <div><label class="req">ทะเบียนรถ</label><input name="plate" required placeholder="เช่น กข 1234"></div>
+        <div><label>จังหวัด</label><input name="province" list="provinces" placeholder="กรุงเทพมหานคร"></div>
+        <div><label>ยี่ห้อ</label><input name="brand" list="brands" placeholder="Toyota"></div>
+        <div><label>รุ่น / โมเดล</label><input name="model" placeholder="Hilux Revo 2.4"></div>
+        <div><label>สี</label><input name="color"></div>
+        <div><label>เลขตัวถัง (คัสซี)</label><input name="chassisNo" style="text-transform:uppercase"></div>
+        <div class="full"><label>หมายเหตุ</label><input name="note"></div>
+      </div>
+      <div class="actions">
+        <button type="button" onclick="closeModal('vehicleModal')">ยกเลิก</button>
+        <button type="submit" class="primary">บันทึก</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- ฟอร์มงานซ่อม -->
+  <div id="repairModal" class="modal hidden">
+    <form class="box" onsubmit="submitRepair(event)">
+      <h3 id="repairModalTitle">บันทึกการซ่อม</h3>
+      <input type="hidden" name="repairId">
+      <div style="margin-bottom:12px">
+        <span class="muted">เลขที่/ปี (รถคันที่ ในปีนั้น): </span>
+        <span class="jobno" id="jobNoPreview">-</span>
+        <div class="hint" id="jobNoHint">ออกเลขอัตโนมัติตามปีของวันที่รับรถ</div>
+      </div>
+      <div class="form-grid">
+        <div><label class="req">วันที่รับรถ</label><input name="receivedDate" type="date" required onchange="previewJobNo()"></div>
+        <div><label>วันที่ซ่อมเสร็จ</label><input name="completedDate" type="date"></div>
+        <div><label>เลขไมล์ (กม.)</label><input name="mileage" inputmode="numeric" placeholder="เช่น 85200"></div>
+        <div class="full"><label>รายการซ่อม (1 บรรทัดต่อ 1 รายการ)</label><textarea name="details" placeholder="เปลี่ยนน้ำมันเครื่อง&#10;เปลี่ยนผ้าเบรกหน้า"></textarea></div>
+        <div><label>ช่างผู้รับผิดชอบ</label><input name="technician"></div>
+        <div><label>ค่าใช้จ่าย (บาท)</label><input name="cost" inputmode="decimal"></div>
+        <div class="full"><label>หมายเหตุ</label><input name="note"></div>
+      </div>
+      <div class="actions">
+        <button type="button" onclick="closeModal('repairModal')">ยกเลิก</button>
+        <button type="submit" class="primary">บันทึก</button>
+      </div>
+    </form>
+  </div>
+
+  <datalist id="brands">
+    <option>Toyota</option><option>Honda</option><option>Isuzu</option><option>Nissan</option><option>Mitsubishi</option>
+    <option>Mazda</option><option>Ford</option><option>Chevrolet</option><option>Suzuki</option><option>MG</option>
+    <option>BYD</option><option>GWM</option><option>Hyundai</option><option>Kia</option><option>Mercedes-Benz</option><option>BMW</option>
+  </datalist>
+  <datalist id="provinces"></datalist>
+
+  <div id="toast" class="hidden"></div>
+
+  <?!= include('JavaScript'); ?>
+</body>
+</html>

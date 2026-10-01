@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    @page { size: A4; margin: 0; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; background: #e9ecf1; font-family: 'Sarabun', sans-serif; color: #111; }
+    .toolbar { position: sticky; top: 0; z-index: 5; background: #1f3a60; color: #fff; padding: 10px 16px; display: flex; gap: 10px; align-items: center; justify-content: center; }
+    .toolbar button { font-family: inherit; font-size: 15px; padding: 8px 18px; border-radius: 7px; border: 0; cursor: pointer; background: #fff; color: #1f3a60; font-weight: 600; }
+    .page {
+      width: 210mm; min-height: 297mm; margin: 16px auto; background: #fff; padding: 14mm 17mm 12mm;
+      box-shadow: 0 2px 12px rgba(0,0,0,.15); position: relative; font-size: 14.5px; line-height: 1.45;
+    }
+    .frame { border: 2px solid #1f3a60; outline: 1px solid #1f3a60; outline-offset: 3px; padding: 8mm 9mm; min-height: calc(297mm - 30mm); display: flex; flex-direction: column; }
+    .shop { text-align: center; border-bottom: 2px solid #1f3a60; padding-bottom: 8px; }
+    .shop img { max-height: 64px; max-width: 200px; display: block; margin: 0 auto 4px; }
+    .shop .name { font-size: 24px; font-weight: 700; color: #1f3a60; line-height: 1.2; }
+    .shop .sub { font-size: 13.5px; color: #5b6573; }
+    .title { text-align: center; margin: 14px 0 4px; }
+    .title h1 { margin: 0; font-size: 26px; color: #1f3a60; letter-spacing: .5px; }
+    .title div { font-size: 12px; color: #5b6573; letter-spacing: 2px; }
+    .meta { display: flex; justify-content: space-between; margin: 10px 0 4px; font-size: 15px; }
+    .meta b { font-size: 17px; }
+    h2 { font-size: 16px; color: #1f3a60; margin: 12px 0 4px; }
+    table { width: 100%; border-collapse: collapse; }
+    td { border: 1px solid #c9ced6; padding: 5px 9px; vertical-align: top; }
+    td.l { width: 34mm; background: #eef2f7; font-weight: 600; color: #26303d; }
+    td.v { white-space: pre-line; }
+    .cert { margin-top: 14px; text-indent: 2.5em; }
+    .warranty { font-size: 13px; color: #5b6573; font-style: italic; margin-top: 4px; }
+    .signs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: auto; padding-top: 26px; text-align: center; font-size: 13.5px; }
+    .signs .line { margin-top: 34px; }
+    .error { max-width: 520px; margin: 60px auto; background: #fff; padding: 24px; border-radius: 10px; text-align: center; }
+    @media print {
+      html, body { background: #fff; }
+      .toolbar { display: none; }
+      .page { margin: 0; box-shadow: none; width: 210mm; height: 297mm; min-height: 0; overflow: hidden; }
+    }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <span id="docTitle"></span>
+    <button onclick="window.print()">🖨 พิมพ์ / บันทึกเป็น PDF</button>
+  </div>
+  <div id="root"></div>
+
+  <script>
+    const DATA = <?!= dataJson ?>;
+
+    function esc(s) {
+      return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+
+    function render(d) {
+      const root = document.getElementById('root');
+      if (d.error) {
+        root.innerHTML = `<div class="error"><h2>ไม่สามารถแสดงใบรับรองได้</h2><p>${esc(d.error)}</p></div>`;
+        document.querySelector('.toolbar button').style.display = 'none';
+        return;
+      }
+      const f = d.fields, s = d.shop, t = d.text;
+      const rows = (list) => `<table>${list.map(([l, v]) => `<tr><td class="l">${esc(l)}</td><td class="v">${esc(v) || '-'}</td></tr>`).join('')}</table>`;
+      const repairRows = [['วันที่รับรถ', f.receivedDate], ['วันที่ซ่อมเสร็จ', f.completedDate], ['รายการซ่อม', f.details]];
+      if (f.technician) repairRows.push(['ช่างผู้รับผิดชอบ', f.technician]);
+      if (f.note) repairRows.push(['หมายเหตุ', f.note]);
+      const contact = [s.shopPhone && 'โทร ' + s.shopPhone, s.shopTaxId && 'เลขประจำตัวผู้เสียภาษี ' + s.shopTaxId].filter(Boolean).join('   ');
+      const sign = (label, who) => `<div><div class="line">ลงชื่อ ..........................................</div>
+        <div>( ${who ? esc(who) : '&nbsp;'.repeat(44)} )</div><div><b>${label}</b></div><div>วันที่ ......../......../..........</div></div>`;
+
+      document.getElementById('docTitle').textContent = `ใบรับรองเลขที่ ${f.jobNo} — ${f.plateFull}`;
+      root.innerHTML = `
+        <div class="page"><div class="frame">
+          <div class="shop">
+            ${s.logoDataUri ? `<img src="${s.logoDataUri}" alt="logo">` : ''}
+            <div class="name">${esc(s.shopName)}</div>
+            ${s.shopAddress ? `<div class="sub">${esc(s.shopAddress)}</div>` : ''}
+            ${contact ? `<div class="sub">${esc(contact)}</div>` : ''}
+          </div>
+          <div class="title"><h1>${esc(t.title)}</h1>${t.subtitle ? `<div>${esc(t.subtitle)}</div>` : ''}</div>
+          <div class="meta"><span>เลขที่ <b>${esc(f.jobNo)}</b></span><span>วันที่ออกเอกสาร ${esc(f.issueDate)}</span></div>
+
+          <h2>ข้อมูลลูกค้า</h2>
+          ${rows([['ชื่อลูกค้า', f.customerName], ['เบอร์โทร', f.phone], ['ช่องทางติดต่ออื่น', f.otherContact]])}
+          <h2>ข้อมูลรถ</h2>
+          ${rows([['ทะเบียนรถ', f.plateFull], ['ยี่ห้อ / รุ่น', f.brandModel], ['สี', f.color], ['เลขตัวถัง (คัสซี)', f.chassisNo], ['เลขไมล์', f.mileage]])}
+          <h2>รายละเอียดการซ่อม</h2>
+          ${rows(repairRows)}
+
+          ${t.certificate ? `<p class="cert">${esc(t.certificate)}</p>` : ''}
+          ${t.warranty ? `<div class="warranty">เงื่อนไขการรับประกัน: ${esc(t.warranty)}</div>` : ''}
+
+          <div class="signs">
+            ${sign('ช่างผู้ซ่อม', f.technician)}
+            ${sign('ผู้รับรอง / ผู้จัดการ', '')}
+            ${sign('ลูกค้าผู้รับรถ', '')}
+          </div>
+        </div></div>`;
+      fitToScreen();
+    }
+
+    // ย่อหน้ากระดาษให้พอดีจอมือถือ (ไม่มีผลตอนพิมพ์)
+    function fitToScreen() {
+      const page = document.querySelector('.page');
+      if (!page) return;
+      const pagePx = page.offsetWidth + 32;
+      const scale = Math.min(1, window.innerWidth / pagePx);
+      page.style.zoom = scale < 1 ? scale : '';
+    }
+    window.addEventListener('resize', fitToScreen);
+    window.addEventListener('beforeprint', () => { const p = document.querySelector('.page'); if (p) p.style.zoom = ''; });
+    window.addEventListener('afterprint', fitToScreen);
+
+    render(DATA);
+  </script>
+</body>
+</html>

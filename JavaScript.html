@@ -1,0 +1,285 @@
+<script>
+  // เรียกฟังก์ชันฝั่งเซิร์ฟเวอร์แบบ Promise
+  function call(fn, args) {
+    return new Promise((resolve, reject) => {
+      google.script.run.withSuccessHandler(resolve).withFailureHandler(reject)[fn](...args);
+    });
+  }
+  // api.searchVehicles('กข') → ส่ง token ไปด้วยทุกครั้ง; ถ้า token หมดอายุ/ผิด จะเด้งไปหน้าใส่รหัส
+  const api = new Proxy({}, {
+    get: (_, fn) => (...args) => call(fn, [state.token, ...args]).catch(err => {
+      if (isAuthError(err)) showLogin();
+      throw err;
+    }),
+  });
+  const isAuthError = (err) => String((err && err.message) || err).indexOf('AUTH_REQUIRED') !== -1;
+
+  const PROVINCES = 'กรุงเทพมหานคร กระบี่ กาญจนบุรี กาฬสินธุ์ กำแพงเพชร ขอนแก่น จันทบุรี ฉะเชิงเทรา ชลบุรี ชัยนาท ชัยภูมิ ชุมพร เชียงราย เชียงใหม่ ตรัง ตราด ตาก นครนายก นครปฐม นครพนม นครราชสีมา นครศรีธรรมราช นครสวรรค์ นนทบุรี นราธิวาส น่าน บึงกาฬ บุรีรัมย์ ปทุมธานี ประจวบคีรีขันธ์ ปราจีนบุรี ปัตตานี พระนครศรีอยุธยา พะเยา พังงา พัทลุง พิจิตร พิษณุโลก เพชรบุรี เพชรบูรณ์ แพร่ ภูเก็ต มหาสารคาม มุกดาหาร แม่ฮ่องสอน ยโสธร ยะลา ร้อยเอ็ด ระนอง ระยอง ราชบุรี ลพบุรี ลำปาง ลำพูน เลย ศรีสะเกษ สกลนคร สงขลา สตูล สมุทรปราการ สมุทรสงคราม สมุทรสาคร สระแก้ว สระบุรี สิงห์บุรี สุโขทัย สุพรรณบุรี สุราษฎร์ธานี สุรินทร์ หนองคาย หนองบัวลำภู อ่างทอง อำนาจเจริญ อุดรธานี อุตรดิตถ์ อุทัยธานี อุบลราชธานี'.split(' ');
+
+  const TOKEN_KEY = 'garageToken';
+  function loadToken() { try { return localStorage.getItem(TOKEN_KEY) || ''; } catch (e) { return ''; } }
+  function saveToken(t) { try { t ? localStorage.setItem(TOKEN_KEY, t) : localStorage.removeItem(TOKEN_KEY); } catch (e) { /* ignore */ } }
+  const state = { info: {}, vehicle: null, repairs: [], searchSeq: 0, token: loadToken() };
+  const $ = (id) => document.getElementById(id);
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+  // '2026-09-29' → '29/09/2569'
+  function fmtDate(iso) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || '');
+    return m ? `${m[3]}/${m[2]}/${Number(m[1]) + 543}` : '';
+  }
+  function fmtNum(n, digits) {
+    if (n === '' || n == null) return '';
+    return Number(n).toLocaleString('th-TH', { minimumFractionDigits: digits || 0, maximumFractionDigits: digits || 0 });
+  }
+  function todayIso() {
+    const d = new Date();
+    return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  }
+  function plateHtml(v) {
+    return `<span class="plate">${esc(v.plate)}${v.province ? `<small>${esc(v.province)}</small>` : ''}</span>`;
+  }
+
+  let loadingCount = 0;
+  async function busy(promise) {
+    loadingCount++; $('loading').classList.remove('hidden');
+    try { return await promise; }
+    catch (err) { if (!isAuthError(err)) toast(err.message || String(err), true); throw err; }
+    finally { if (--loadingCount === 0) $('loading').classList.add('hidden'); }
+  }
+  let toastTimer;
+  function toast(msg, isError) {
+    const t = $('toast');
+    t.textContent = msg;
+    t.className = isError ? 'error' : '';
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => t.classList.add('hidden'), isError ? 6000 : 3000);
+  }
+
+  /* ---------- ค้นหา ---------- */
+  let searchTimer;
+  $('q').addEventListener('input', () => { clearTimeout(searchTimer); searchTimer = setTimeout(doSearch, 350); });
+  $('q').addEventListener('keydown', (e) => { if (e.key === 'Enter') { clearTimeout(searchTimer); doSearch(); } });
+
+  async function doSearch() {
+    const q = $('q').value.trim();
+    const seq = ++state.searchSeq;
+    const res = await busy(api.searchVehicles(q)).catch(() => null);
+    if (!res || seq !== state.searchSeq) return;
+    $('resultInfo').textContent = q
+      ? `พบ ${res.total} คัน${res.total > res.items.length ? ` (แสดง ${res.items.length} รายการแรก)` : ''}`
+      : `รถทั้งหมด ${res.total} คัน — เรียงตามการซ่อมล่าสุด`;
+    $('results').innerHTML = res.items.length ? res.items.map(v => `
+      <tr class="clickable" onclick="openVehicle('${esc(v.vehicleId)}')">
+        <td>${plateHtml(v)}</td>
+        <td>${esc([v.brand, v.model].filter(Boolean).join(' '))}${v.color ? `<div class="muted">${esc(v.color)}</div>` : ''}</td>
+        <td>${esc(v.customerName)}${v.otherContact ? `<div class="muted">${esc(v.otherContact)}</div>` : ''}</td>
+        <td class="hide-sm">${esc(v.phone)}</td>
+        <td class="hide-sm">${esc(v.chassisNo)}</td>
+        <td><span class="badge">${v.repairCount}</span></td>
+        <td class="hide-sm">${fmtDate(v.lastRepairDate)}${v.lastJobNo ? `<div class="muted">${esc(v.lastJobNo)}</div>` : ''}</td>
+      </tr>`).join('') : `<tr><td colspan="7" class="muted">ไม่พบข้อมูล${q ? ' — กด "+ เพิ่มรถ / ลูกค้าใหม่" เพื่อบันทึกรถคันใหม่' : ''}</td></tr>`;
+  }
+
+  function backToSearch() {
+    $('vehicleView').classList.add('hidden');
+    $('searchView').classList.remove('hidden');
+    state.vehicle = null;
+    doSearch();
+  }
+
+  /* ---------- รายละเอียดรถ ---------- */
+  async function openVehicle(vehicleId) {
+    const res = await busy(api.getVehicle(vehicleId)).catch(() => null);
+    if (!res) return;
+    state.vehicle = res.vehicle;
+    state.repairs = res.repairs;
+    renderVehicle();
+    $('searchView').classList.add('hidden');
+    $('vehicleView').classList.remove('hidden');
+    window.scrollTo(0, 0);
+  }
+
+  function renderVehicle() {
+    const v = state.vehicle;
+    $('vTitle').innerHTML = `${plateHtml(v)} &nbsp;${esc([v.brand, v.model].filter(Boolean).join(' '))}`;
+    const f = (label, val) => `<div class="field"><label>${label}</label><div class="val">${esc(val) || '<span class="muted">-</span>'}</div></div>`;
+    $('vInfo').innerHTML = [
+      f('ชื่อลูกค้า', v.customerName), f('เบอร์โทร', v.phone), f('ช่องทางติดต่ออื่น', v.otherContact),
+      f('ทะเบียน / จังหวัด', [v.plate, v.province].filter(Boolean).join(' ')), f('ยี่ห้อ / รุ่น', [v.brand, v.model].filter(Boolean).join(' ')),
+      f('สี', v.color), f('เลขตัวถัง (คัสซี)', v.chassisNo), f('หมายเหตุ', v.note),
+    ].join('');
+
+    $('repairs').innerHTML = state.repairs.length ? state.repairs.map(r => `
+      <tr>
+        <td><b>${esc(r.jobNo)}</b></td>
+        <td>${fmtDate(r.receivedDate)}</td>
+        <td>${r.completedDate ? fmtDate(r.completedDate) : '<span class="badge wait">กำลังซ่อม</span>'}</td>
+        <td>${fmtNum(r.mileage)}</td>
+        <td><div class="details">${esc(r.details)}</div>${r.cost !== '' ? `<div class="muted">ค่าใช้จ่าย ${fmtNum(r.cost, 2)} บาท</div>` : ''}${r.note ? `<div class="muted">หมายเหตุ: ${esc(r.note)}</div>` : ''}</td>
+        <td class="hide-sm">${esc(r.technician)}</td>
+        <td>
+          <div class="toolbar">
+            <button class="small primary" onclick="printCert('${esc(r.repairId)}')">🖨 พิมพ์</button>
+            <button class="small" onclick="makeDoc('${esc(r.repairId)}')">📄 สร้าง Doc/PDF</button>
+            ${r.certDocUrl ? `<a class="small" href="${esc(r.certDocUrl)}" target="_blank">เปิด Doc</a>` : ''}
+            ${r.certPdfUrl ? `<a class="small" href="${esc(r.certPdfUrl)}" target="_blank">PDF</a>` : ''}
+          </div>
+          <div class="toolbar" style="margin-top:6px">
+            <button class="small" onclick="openRepairForm('${esc(r.repairId)}')">แก้ไข</button>
+            <button class="small danger" onclick="removeRepair('${esc(r.repairId)}')">ลบ</button>
+          </div>
+        </td>
+      </tr>`).join('') : '<tr><td colspan="7" class="muted">ยังไม่มีประวัติการซ่อม — กด "+ บันทึกการซ่อม"</td></tr>';
+  }
+
+  /* ---------- ฟอร์มรถ ---------- */
+  function fillForm(form, data) {
+    Array.from(form.elements).forEach(el => { if (el.name) el.value = data && data[el.name] != null ? data[el.name] : ''; });
+  }
+  function formData(form) {
+    const o = {};
+    Array.from(form.elements).forEach(el => { if (el.name) o[el.name] = el.value; });
+    return o;
+  }
+  function openModal(id) { $(id).classList.remove('hidden'); setTimeout(() => { const i = $(id).querySelector('input:not([type=hidden])'); if (i) i.focus(); }, 50); }
+  function closeModal(id) { $(id).classList.add('hidden'); }
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') document.querySelectorAll('.modal').forEach(m => m.classList.add('hidden')); });
+
+  function openVehicleForm(v) {
+    const form = $('vehicleModal').querySelector('form');
+    fillForm(form, v || { plate: /^[฀-๿0-9\s]+$/.test($('q').value.trim()) && !state.vehicle ? $('q').value.trim() : '' });
+    $('vehicleModalTitle').textContent = v ? 'แก้ไขข้อมูลรถ / ลูกค้า' : 'เพิ่มรถ / ลูกค้าใหม่';
+    openModal('vehicleModal');
+  }
+
+  async function submitVehicle(e) {
+    e.preventDefault();
+    const data = formData(e.target);
+    data.chassisNo = data.chassisNo.toUpperCase();
+    const id = await busy(api.saveVehicle(data)).catch(() => null);
+    if (!id) return;
+    closeModal('vehicleModal');
+    toast('บันทึกข้อมูลรถแล้ว');
+    openVehicle(id);
+  }
+
+  async function removeVehicle() {
+    const v = state.vehicle;
+    if (!confirm(`ลบรถทะเบียน ${v.plate} และประวัติการซ่อมทั้งหมด ${state.repairs.length} รายการ?\nการลบไม่สามารถย้อนกลับได้`)) return;
+    const ok = await busy(api.deleteVehicle(v.vehicleId)).catch(() => null);
+    if (!ok) return;
+    toast('ลบข้อมูลรถแล้ว');
+    backToSearch();
+  }
+
+  /* ---------- ฟอร์มงานซ่อม ---------- */
+  function openRepairForm(repairId) {
+    const form = $('repairModal').querySelector('form');
+    const r = repairId ? state.repairs.find(x => x.repairId === repairId) : null;
+    if (r) {
+      fillForm(form, r);
+      $('jobNoPreview').textContent = r.jobNo;
+      $('jobNoHint').textContent = 'เลขที่ออกแล้ว จะไม่เปลี่ยนแม้แก้วันที่';
+    } else {
+      const last = state.repairs[0];
+      fillForm(form, { receivedDate: todayIso(), technician: last ? last.technician : '' });
+      $('jobNoHint').textContent = 'ออกเลขอัตโนมัติตามปีของวันที่รับรถ (เลขจริงจะยืนยันตอนบันทึก)';
+      previewJobNo();
+    }
+    $('repairModalTitle').textContent = r ? `แก้ไขงานซ่อม ${r.jobNo}` : `บันทึกการซ่อม — ${state.vehicle.plate}`;
+    openModal('repairModal');
+  }
+
+  async function previewJobNo() {
+    const form = $('repairModal').querySelector('form');
+    if (form.elements.repairId.value) return;
+    $('jobNoPreview').textContent = '…';
+    const no = await api.getNextJobNo(form.elements.receivedDate.value || todayIso()).catch(() => '-');
+    if (!form.elements.repairId.value) $('jobNoPreview').textContent = no;
+  }
+
+  async function submitRepair(e) {
+    e.preventDefault();
+    const data = formData(e.target);
+    data.vehicleId = state.vehicle.vehicleId;
+    const res = await busy(api.saveRepair(data)).catch(() => null);
+    if (!res) return;
+    closeModal('repairModal');
+    toast(`บันทึกงานซ่อม เลขที่ ${res.jobNo} แล้ว`);
+    openVehicle(state.vehicle.vehicleId);
+  }
+
+  async function removeRepair(repairId) {
+    const r = state.repairs.find(x => x.repairId === repairId);
+    if (!confirm(`ลบประวัติการซ่อม เลขที่ ${r.jobNo}?`)) return;
+    const ok = await busy(api.deleteRepair(repairId)).catch(() => null);
+    if (!ok) return;
+    toast('ลบประวัติการซ่อมแล้ว');
+    openVehicle(state.vehicle.vehicleId);
+  }
+
+  /* ---------- ใบรับรอง ---------- */
+  function printCert(repairId) {
+    if (!state.info.baseUrl) { toast('กรุณา Deploy เป็น Web app ก่อนจึงจะเปิดหน้าพิมพ์ได้', true); return; }
+    window.open(`${state.info.baseUrl}?print=${encodeURIComponent(repairId)}&t=${encodeURIComponent(state.token)}`, '_blank');
+  }
+
+  async function makeDoc(repairId) {
+    toast('กำลังสร้างใบรับรองใน Google Docs…');
+    const res = await busy(api.createCertificateDoc(repairId)).catch(() => null);
+    if (!res) return;
+    toast('สร้างใบรับรองแล้ว: ' + res.name);
+    window.open(res.docUrl, '_blank');
+    openVehicle(state.vehicle.vehicleId);
+  }
+
+  /* ---------- เริ่มต้น ---------- */
+  $('provinces').innerHTML = PROVINCES.map(p => `<option>${p}</option>`).join('');
+  /* ---------- เข้าสู่ระบบ ---------- */
+  function showLogin() {
+    saveToken(''); state.token = '';
+    document.querySelectorAll('.modal').forEach(m => m.classList.add('hidden'));
+    $('loginView').classList.remove('hidden');
+    $('pin').value = '';
+    setTimeout(() => $('pin').focus(), 50);
+    call('getLoginInfo', []).then(i => { $('loginShop').textContent = i.shopName; }).catch(() => {});
+  }
+
+  async function submitLogin(e) {
+    e.preventDefault();
+    $('loginError').textContent = '';
+    $('loginBtn').disabled = true;
+    try {
+      state.token = await call('login', [$('pin').value]);
+      saveToken(state.token);
+      $('loginView').classList.add('hidden');
+      start();
+    } catch (err) {
+      $('loginError').textContent = err.message || String(err);
+      $('pin').select();
+    } finally {
+      $('loginBtn').disabled = false;
+    }
+  }
+
+  function logout() {
+    if (!confirm('ออกจากระบบ?')) return;
+    showLogin();
+  }
+
+  async function start() {
+    try {
+      state.info = await api.getAppInfo();
+    } catch (err) {
+      if (!isAuthError(err)) toast(err.message || String(err), true);
+      return;
+    }
+    $('shopName').textContent = state.info.shopName;
+    backToSearch();
+  }
+
+  if (state.token) start(); else showLogin();
+</script>
